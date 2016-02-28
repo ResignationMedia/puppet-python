@@ -18,7 +18,14 @@ class python::install {
   $python = $::python::version ? {
     'system' => 'python',
     'pypy'   => 'pypy',
-    default  => $python::version,
+    default  => "python${python::version}",
+  }
+
+  $pip = $::python::version ? {
+    'system' => 'pip',
+    /^2.*/ => 'pip',
+    /^3.*/ => 'pip3',
+    default => 'pip'
   }
 
   $pythondev = $::osfamily ? {
@@ -50,9 +57,12 @@ class python::install {
     name   => $python,
   }
 
-  package { 'virtualenv':
-    ensure  => $venv_ensure,
-    require => Package['python'],
+  # Python 3.x on RHEL includes virtualenv as part of the main python package.
+  if $::osfamily != 'RedHat' or $python::version !~ /^3.*/ {
+    package { 'virtualenv':
+      ensure  => $venv_ensure,
+      require => Package['python'],
+    }
   }
 
   case $python::provider {
@@ -70,7 +80,7 @@ class python::install {
 
       # Install pip without pip, see https://pip.pypa.io/en/stable/installing/.
       exec { 'bootstrap pip':
-        command => '/usr/bin/curl https://bootstrap.pypa.io/get-pip.py | python',
+        command => "/usr/bin/curl https://bootstrap.pypa.io/get-pip.py | ${python}",
         creates => '/usr/local/bin/pip',
         require => Package['python'],
       }
@@ -163,9 +173,11 @@ class python::install {
 
     default: {
 
-      package { 'pip':
-        ensure  => $pip_ensure,
-        require => Package['python'],
+      if $::osfamily != 'RedHat' or $python::version !~ /^3.*/ {
+        package { 'pip':
+          ensure  => $pip_ensure,
+          require => Package['python'],
+        }
       }
 
       package { 'python-dev':
@@ -173,7 +185,7 @@ class python::install {
         name   => $pythondev,
       }
 
-      if $::osfamily == 'RedHat' {
+      if $::osfamily == 'RedHat' and $python::version !~ /^3.*/ {
         if $pip_ensure != 'absent' {
           if $python::use_epel == true {
             include 'epel'
@@ -195,18 +207,25 @@ class python::install {
         }
       }
 
-      if $::python::version =~ /^3/ {
-        $pip_package = 'python3-pip'
+      $pip_package = 'python-pip'
+
+      if $::osfamily == 'RedHat' and $python::version =~ /^3.*/ {
+        # Install pip without pip, see https://pip.pypa.io/en/stable/installing/.
+        exec { 'bootstrap pip':
+          command => "/usr/bin/curl https://bootstrap.pypa.io/get-pip.py | /usr/bin/python3",
+          creates => '/usr/bin/pip3',
+          require => Package['python'],
+        }
       } else {
-        $pip_package = 'python-pip'
+        Package <| title == 'pip' |> {
+          name => $pip_package,
+        }
       }
 
-      Package <| title == 'pip' |> {
-        name => $pip_package,
-      }
-
-      Package <| title == 'virtualenv' |> {
-        name => $virtualenv_package,
+      if $::osfamily != 'RedHat' or $python::version !~ /^3.*/ {
+        Package <| title == 'virtualenv' |> {
+          name => $virtualenv_package,
+        }
       }
     }
   }

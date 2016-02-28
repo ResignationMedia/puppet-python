@@ -115,9 +115,23 @@ define python::pip (
     default  => $virtualenv,
   }
 
-  $pip_env = $virtualenv ? {
-    'system' => "${exec_prefix}pip",
-    default  => "${virtualenv}/bin/pip",
+  if $::osfamily == 'RedHat' {
+    if $virtualenv == 'system' {
+      $pip_env = $python_version ? {
+        /^2.*/ => "${exec_prefix}pip",
+        /^3.*/ => "${exec_prefix}pip3"
+      } 
+    } else {
+      $pip_env = $python_version ? {
+        /^2.*/ => "${virtualenv}/bin/pip",
+        /^3.*/ => "${virtualenv}/bin/pip3",
+      }
+    }
+  } else {
+    $pip_env = $virtualenv ? {
+      'system' => "${exec_prefix}pip",
+      default  => "${virtualenv}/bin/pip",
+    }
   }
 
   $pypi_index = $index ? {
@@ -255,7 +269,7 @@ define python::pip (
       default: {
         # Anti-action, uninstall.
         exec { "pip_uninstall_${name}":
-          command     => "echo y | ${pip_env} uninstall ${uninstall_args} ${proxy_flag}",
+          command     => "echo y | ${pip_env} uninstall ${uninstall_args} ${proxy_flag} ${name}",
           onlyif      => "${pip_env} freeze | grep -i -e ${grep_regex}",
           user        => $owner,
           group       => $group,
